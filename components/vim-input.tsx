@@ -190,13 +190,13 @@ export function VimInput({ onSubmit, onCommand, isCommandKOpen, setIsCommandKOpe
             >
               {/* Search input */}
               <div className="flex items-center gap-3 px-5 py-3 border-b border-white/10">
-                <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-white/40 select-none shrink-0">⌘K</span>
+                <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-white/60 select-none shrink-0">⌘K</span>
                 <input
                   ref={searchInputRef}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search commands…"
-                  className="flex-1 bg-transparent font-mono text-xs text-white/70 placeholder:text-white/35 outline-none"
+                  className="flex-1 bg-transparent font-mono text-xs text-white/70 placeholder:text-white/55 outline-none"
                 />
                 {search && (
                   <button
@@ -299,7 +299,7 @@ export function VimInput({ onSubmit, onCommand, isCommandKOpen, setIsCommandKOpe
                 ].map(([key, label]) => (
                   <div key={key} className="flex items-center gap-1.5">
                     <kbd className="font-mono text-[9px] text-white/50 bg-white/8 border border-white/15 rounded px-1 py-0.5">{key}</kbd>
-                    <span className="font-mono text-[8px] uppercase tracking-wider text-white/40">{label}</span>
+                    <span className="font-mono text-[8px] uppercase tracking-wider text-white/60">{label}</span>
                   </div>
                 ))}
               </div>
@@ -320,28 +320,28 @@ export function VimInput({ onSubmit, onCommand, isCommandKOpen, setIsCommandKOpe
               value={value}
               onValueChange={setValue}
               placeholder="Capture something..."
-              className="flex-1 bg-transparent font-mono text-sm tracking-tight text-white outline-none placeholder:text-white/35"
+              className="flex-1 bg-transparent font-mono text-sm tracking-tight text-white outline-none placeholder:text-white/55"
               autoFocus
             />
           </div>
 
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <kbd className="flex h-5 items-center rounded border border-white/10 bg-white/5 px-1.5 font-mono text-[9px] text-white/40">
+              <kbd className="flex h-5 items-center rounded border border-white/10 bg-white/5 px-1.5 font-mono text-[9px] text-white/60">
                 <span className="text-[11px] mr-1">⌘</span>
                 <span>Z</span>
               </kbd>
-              <span className="text-[9px] font-mono font-bold text-white/30 uppercase tracking-tighter">Undo</span>
+              <span className="text-[9px] font-mono font-bold text-white/55 uppercase tracking-tighter">Undo</span>
             </div>
 
             <div className="h-4 w-px bg-white/10" />
 
             <div className="flex items-center gap-2">
-              <kbd className="flex h-5 items-center rounded border border-white/10 bg-white/5 px-1.5 font-mono text-[9px] text-white/40">
+              <kbd className="flex h-5 items-center rounded border border-white/10 bg-white/5 px-1.5 font-mono text-[9px] text-white/60">
                 <span className="text-[11px] mr-1">⌘</span>
                 <span>K</span>
               </kbd>
-              <span className="text-[9px] font-mono font-bold text-white/30 uppercase tracking-tighter">Commands</span>
+              <span className="text-[9px] font-mono font-bold text-white/55 uppercase tracking-tighter">Commands</span>
             </div>
 
             <div className="h-4 w-px bg-white/20" />

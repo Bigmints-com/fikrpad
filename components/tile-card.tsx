@@ -52,8 +52,8 @@ const MarkdownComponents = {
   ol: ({ children }: any) => <ol className="mb-3 list-decimal pl-4 last:mb-0">{children}</ol>,
   li: ({ children }: any) => <li className="mb-1">{children}</li>,
   h1: ({ children }: any) => <h1 className="mb-2 text-base font-bold">{children}</h1>,
-  h2: ({ children }: any) => <h2 className="mb-2 text-sm font-bold">{children}</h2>,
-  h3: ({ children }: any) => <h3 className="mb-1 text-[13px] font-bold">{children}</h3>,
+  h2: ({ children }: any) => <h2 className="mb-2 text-base font-bold">{children}</h2>,
+  h3: ({ children }: any) => <h3 className="mb-1 text-sm font-bold">{children}</h3>,
   a: ({ href, children }: any) => {
     let displayDomain = href
     try {
@@ -440,7 +440,7 @@ export const TileCard = memo(function TileCard({
                       }}
                       onKeyDown={handleKeyDown}
                       onBlur={handleSave}
-                      className={`w-full resize-none rounded-sm bg-secondary/30 px-2 py-1.5 text-sm font-bold leading-relaxed text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 ${isTextRTL ? 'rtl-text' : ''}`}
+                      className={`w-full resize-none rounded-sm bg-secondary/30 px-2 py-1.5 text-base font-bold leading-relaxed text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 ${isTextRTL ? 'rtl-text' : ''}`}
                       style={{ minHeight: "3rem" }}
                     />
                     <div className="flex items-center gap-1">
@@ -482,7 +482,7 @@ export const TileCard = memo(function TileCard({
                               >
                                 {st.isDone && <Check className="h-3 w-3 text-white" />}
                               </button>
-                              <span className={`flex-1 text-[13px] leading-relaxed transition-all ${st.isDone ? 'text-foreground/40 line-through' : 'text-foreground'}`}>
+                              <span className={`flex-1 text-sm leading-relaxed transition-all ${st.isDone ? 'text-foreground/40 line-through' : 'text-foreground'}`}>
                                 {st.text}
                               </span>
                               <button
@@ -516,7 +516,7 @@ export const TileCard = memo(function TileCard({
                             onChange={(e) => setEditAnnotation(e.target.value)}
                             onKeyDown={handleAnnotationKeyDown}
                             onBlur={handleAnnotationSave}
-                            className={`flex-1 w-full resize-none rounded-md bg-secondary/20 px-3 py-3 text-[13px] leading-relaxed text-foreground border border-border/20 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:bg-secondary/30 transition-colors ${isAnnotationRTL ? 'rtl-text' : ''}`}
+                            className={`flex-1 w-full resize-none rounded-md bg-secondary/20 px-3 py-3 text-sm leading-relaxed text-foreground border border-border/20 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:bg-secondary/30 transition-colors ${isAnnotationRTL ? 'rtl-text' : ''}`}
                             placeholder="Start writing..."
                           />
                           <div className="flex items-center justify-between px-1">
@@ -708,20 +708,20 @@ function renderBody(
           className="pl-3"
           style={{ borderLeft: `2px solid ${accent}`, opacity: 0.9 }}
         >
-          <p className="text-sm italic leading-relaxed text-foreground">
+          <p className="text-base italic leading-relaxed text-foreground">
             {text}
           </p>
         </div>
       )
     case "italic":
       return (
-        <p className="text-sm italic font-bold leading-relaxed text-foreground">
+        <p className="text-base italic font-bold leading-relaxed text-foreground">
           {text}
         </p>
       )
     case "muted-italic":
       return (
-        <p className="text-sm italic font-bold leading-relaxed text-muted-foreground">
+        <p className="text-base italic font-bold leading-relaxed text-muted-foreground">
           {text}
         </p>
       )
@@ -762,7 +762,7 @@ function renderBody(
       )
     default:
       return (
-        <p className="text-sm font-bold leading-relaxed text-foreground">
+        <p className="text-base font-bold leading-relaxed text-foreground">
           {text}
         </p>
       )
