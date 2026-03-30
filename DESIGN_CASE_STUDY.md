@@ -86,14 +86,39 @@ If you already know what type a note is, you can declare it inline: `#claim Caff
 
 This is an expert shortcut, not a requirement. Most users never use it.
 
-### The command palette — ⌘K
+### The command palette — ⌘K / Ctrl+K
 
 `screenshot-command-palette.png`
 *The ⌘K command grid showing Views, Navigate, and Actions sections.*
 
-Pressing ⌘K opens a full-screen command grid. Commands are grouped into three sections: Views (switch between tiling, kanban, graph), Navigate (jump to panels, open settings), and Actions (export, copy, undo). The palette is keyboard-navigable and closes on Escape or action execution.
+Pressing ⌘K (or Ctrl+K on Windows and Linux) opens a full-screen command grid. Commands are grouped into three sections: Views (switch between tiling, kanban, graph), Navigate (jump to panels, open settings), and Actions (export, copy, undo). The palette is keyboard-navigable and closes on Escape or action execution.
+
+The shortcut label adapts to the user's platform: macOS sees `⌘K`, Windows and Linux see `Ctrl+K`. The same adaptation applies to every keyboard shortcut across the app — view switches, undo, index panel — so the interface always speaks the user's native shortcut language.
 
 This keeps the visual interface clean. There is no action bar, no floating toolbar. Everything that isn't immediately essential lives in the palette.
+
+---
+
+## Onboarding — The Intro Modal
+
+`screenshot-intro-modal.png`
+*The first-visit intro modal: full-screen overlay with YouTube embed and "Skip to app →" CTA.*
+
+Spatial tools have a steeper learning curve than linear ones. A blank canvas with no notes and no prompts can be disorienting on a first visit — the surface area of the interface is only legible once you understand the model behind it.
+
+The intro modal solves this without a signup flow, an onboarding wizard, or a feature tour. On a user's first visit, a full-screen overlay appears with an embedded YouTube video that shows the tool in motion. The video autoplays. A single "Skip to app →" call-to-action appears below it. The choice is immediate: watch for thirty seconds or skip straight in.
+
+The modal is gated by a `nodepad-intro-seen` flag in localStorage, so it appears exactly once and never again. It does not interrupt returning users.
+
+### Keeping help discoverable
+
+After the modal closes, a tooltip appears below the `?` button in the status bar:
+
+> *Find help & the intro video here anytime*
+
+The tooltip is ephemeral — it fades on first interaction. Its purpose is to close the loop: the user now knows that what they just saw is retrievable, not gone. The About panel contains the same embedded video at the top, so the intro is always one click away without being persistent visual noise.
+
+This pattern — show once prominently, then anchor quietly — avoids two failure modes: burying help where users won't find it when they need it, and persisting a help button so visibly that it reads as a symptom of poor discoverability.
 
 ---
 
@@ -122,14 +147,18 @@ User submits text
       ↓
 Heuristic classification runs instantly (no network)
       ↓
-Block appears on canvas with provisional type
+Block appears as "general" while enriching
+(syntactically unambiguous types — question, reference, quote, task —
+show their type immediately and send it as a directive to the AI)
       ↓
 AI enrichment call fires in background
       ↓
 Type confirmed or corrected, annotation added
 ```
 
-This two-step approach means the interface is always responsive. Notes appear immediately; the AI layer settles on top of them within a second or two.
+Blocks display as `general` during enrichment rather than showing a provisional heuristic type. The earlier approach — flash the heuristic guess, then switch to the AI result — created an unsettling double-classification: users would watch a note type change mid-thought, which undermined trust in the system. Holding at `general` is a neutral loading state; there is no expectation to violate.
+
+The exception is syntactically unambiguous types: a sentence ending in `?` will always be a question, a URL will always be a reference, and so on. These types are shown immediately and also sent to the AI as a directive — they will not change. Showing them from the start is honest; no correction will follow.
 
 ---
 
@@ -183,11 +212,11 @@ The synthesis note, when present, connects to all nodes and naturally gravitates
 ## The Tile Card
 
 `screenshot-tile-card-anatomy.png`
-*A single tile card with callouts to each UI region: accent bar, type label, connection dot, body text, annotation, confidence bar, sources, subtask list.*
+*A single tile card with callouts to each UI region: accent bar, type label, type-change button, connection dot, body text, annotation, confidence bar, sources, subtask list.*
 
 The tile card is the core unit of the interface. Its anatomy:
 
-**Header row** — type label (small caps, accent color), category badge (AI-assigned topic cluster), connection dot (appears only when the note has inferred relationships), pin indicator, delete button.
+**Header row** — type label (small caps, accent color), type-change button (Tag icon), category badge (AI-assigned topic cluster), connection dot (appears only when the note has inferred relationships), pin indicator, delete button.
 
 **Body** — the note text. Double-click to edit in place. Arabic and Hebrew text is detected automatically and the font and direction switch accordingly (RTL layout, Vazirmatn typeface).
 
@@ -199,18 +228,33 @@ The tile card is the core unit of the interface. Its anatomy:
 
 **Subtask list** — shown on `task` type notes. Checkbox items with individual delete controls. New subtasks can be added inline.
 
+### User-controlled type vs. AI-assigned category
+
+`screenshot-tile-type-dropdown.png`
+*The type-change dropdown open on a tile, listing all 14 types.*
+
+Two classification signals live on every tile, and the design deliberately distinguishes them.
+
+The **type label** — REFLECTION, CLAIM, QUESTION, and so on — is a structural classification: what kind of note is this? Clicking the Tag icon in the tile header opens a dropdown listing all 14 types. Selecting one changes the tile's type immediately and triggers a re-enrichment pass, with the new type sent to the AI as a directive. The annotation is rewritten for the new classification. The user has final say.
+
+The **category badge** — #Linux, #Memory Science, #Urban Planning — is a semantic cluster label: what topic does this note belong to? It is AI-assigned and intentionally read-only on the tile. The AI is better at consistently grouping semantically similar notes across a large canvas than a user manually tagging each one would be. Locking it as AI-assigned also means category groupings in the index panel and kanban view stay coherent rather than fragmenting under ad-hoc user labels.
+
+The distinction matters because the two signals serve different purposes. Type is about the note's epistemic role — a claim makes an assertion, a question opens one, a reflection is personal. Category is about topical proximity — a claim about caffeine and a question about caffeine belong to the same cluster. Separating editorial control of these two dimensions is the honest model for what each one represents.
+
 ---
 
 ## AI Enrichment
 
 `screenshot-enriching-state.png`
-*A tile in the enriching state — shimmer animation on the type label, muted opacity on the body.*
+*A tile in the enriching state — shimmer animation on the body text, the tile displaying "general" as a neutral loading type.*
 
 After each note is added or edited, an enrichment request fires to `/api/enrich` via OpenRouter. The request includes the note text, the last 15 notes as context (wrapped in XML delimiters to prevent prompt injection), and optionally a URL fetch result if the note is a reference type.
 
 ### Enriching state
 
-While the AI call is in flight, the tile enters an enriching state: the type label shows a shimmer animation, the tile has slightly reduced opacity. This is subtle by design — enrichment happens in the background and shouldn't interrupt reading or adding new notes.
+While the AI call is in flight, the tile enters an enriching state: the body text and annotation area show a slow shimmer animation; the tile displays `general` as a neutral placeholder type. The shimmer is a left-to-right lightness sweep running at 3.5 seconds per cycle — slow enough not to feel busy, visible enough to signal that the system is working.
+
+The shimmer runs on the body text and annotation rather than the type label header. The header's colored background made the animation invisible there. Moving it to the content area keeps the signal where the eye already rests when reading a note.
 
 ### What the AI returns
 
@@ -277,6 +321,19 @@ The status bar at the top of the viewport carries the app's ambient information 
 
 Nothing in the status bar requires interaction for the core workflow. It is ambient information that becomes useful once the canvas is populated.
 
+### The API key banner
+
+`screenshot-api-key-banner.png`
+*The amber banner below the status bar, prompting the user to add an OpenRouter API key.*
+
+When no API key is configured, a full-width amber banner appears directly below the status bar, above the canvas. It reads:
+
+> *AI enrichment is inactive — add an OpenRouter API key to classify and annotate your notes.*
+
+with an "Add API key →" button and a "Get a key ↗" external link. The banner disappears once a key is saved.
+
+The earlier approach — a small amber toast inside the empty-state panel — had two problems. It was easy to miss on first open, and it disappeared entirely once the user added their first note, meaning the prompt was gone precisely when the user might have paused and realised they wanted enrichment after all. The global banner is positioned consistently in every view, persists regardless of canvas state, and requires no special condition to discover. It is not dismissable until it's resolved.
+
 ---
 
 ## Sidebar — Settings and Projects
@@ -300,6 +357,17 @@ The `.nodepad` file import button lives at the bottom of the sidebar. Dragging i
 The index panel groups all notes by their AI-assigned category. In tiling and graph views, grouping is by category. In kanban view, grouping is by type.
 
 Hovering a note in the index highlights the corresponding tile on the canvas (and the corresponding node in graph view). This is a navigation tool, not just a list — it lets you jump to any note without scrolling or searching.
+
+---
+
+## About Panel
+
+`screenshot-about-panel.png`
+*The About panel open, showing the intro video embed at the top followed by "The idea" and subsequent sections.*
+
+The About panel is a full-height sheet that slides in from the right. It opens via the `?` button in the status bar and contains a complete introduction to the tool: the philosophy, a quick-start guide, the content type system, all three views, AI features, export and data handling, keyboard shortcuts, and tips.
+
+The panel opens with an embedded video section — the same intro video shown on first visit — before the written content begins. This placement is deliberate: for a returning user who wants to re-watch the intro or share it with someone else, it is the first thing they see. They do not have to scroll past prose to find it. The video and the written reference material coexist in a single accessible location.
 
 ---
 
@@ -354,7 +422,7 @@ This is a deliberate design decision rather than a degraded mobile version. Atte
 
 **Thesis gradient**: the thesis type uses `--thesis-gradient` — a multi-stop gradient — to signal that synthesis output is structurally distinct from research input. It is the only tile that uses a gradient treatment.
 
-**Shimmer animation**: enriching tiles use a `shimmer-text` keyframe animation on the type label — a left-to-right lightness sweep. Subtle enough not to distract, visible enough to indicate that something is happening.
+**Shimmer animation**: enriching tiles show a `shimmer-text` keyframe animation on the body text and annotation — a slow (3.5s) left-to-right lightness sweep on dark text. The animation was moved from the type label header, where the colored background made it invisible, to the content area where the eye already reads. Slow enough not to distract; visible enough to indicate something is in progress.
 
 ---
 
