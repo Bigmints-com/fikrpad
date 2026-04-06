@@ -8,6 +8,39 @@ export interface AIModel {
   shortLabel: string
   description: string
   supportsGrounding: boolean
+  /** For OpenAI models: the search-preview variant to use when grounding is enabled */
+  groundingModelId?: string
+}
+
+export type AIProvider = "openrouter" | "openai"
+
+export interface AIProviderPreset {
+  id: AIProvider
+  label: string
+  baseUrl: string
+  keyUrl: string
+  keyPlaceholder: string
+}
+
+export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    keyUrl: "https://openrouter.ai/settings/keys",
+    keyPlaceholder: "sk-or-v1-...",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    keyUrl: "https://platform.openai.com/api-keys",
+    keyPlaceholder: "sk-...",
+  },
+]
+
+export function getPreset(provider: AIProvider): AIProviderPreset {
+  return AI_PROVIDER_PRESETS.find(p => p.id === provider) || AI_PROVIDER_PRESETS[0]
 }
 
 export const AI_MODELS: AIModel[] = [
@@ -48,26 +81,76 @@ export const AI_MODELS: AIModel[] = [
   },
 ]
 
+export const OPENAI_MODELS: AIModel[] = [
+  {
+    id: "gpt-4o",
+    label: "GPT-4o",
+    shortLabel: "GPT-4o",
+    description: "Strong structured output, broad knowledge",
+    supportsGrounding: true,
+    groundingModelId: "gpt-4o-search-preview",
+  },
+  {
+    id: "gpt-4o-mini",
+    label: "GPT-4o Mini",
+    shortLabel: "GPT-4o Mini",
+    description: "Fast and capable, web grounding available",
+    supportsGrounding: true,
+    groundingModelId: "gpt-4o-mini-search-preview",
+  },
+  {
+    id: "gpt-4.1",
+    label: "GPT-4.1",
+    shortLabel: "GPT-4.1",
+    description: "Latest GPT-4, improved instruction following",
+    supportsGrounding: false,
+  },
+  {
+    id: "gpt-4.1-mini",
+    label: "GPT-4.1 Mini",
+    shortLabel: "GPT-4.1 Mini",
+    description: "Fast and capable, good balance",
+    supportsGrounding: false,
+  },
+  {
+    id: "o4-mini",
+    label: "o4-mini",
+    shortLabel: "o4-mini",
+    description: "Fast reasoning model",
+    supportsGrounding: false,
+  },
+]
+
+export function getModelsForProvider(provider: AIProvider): AIModel[] {
+  if (provider === "openai") return OPENAI_MODELS
+  return AI_MODELS // openrouter + safe fallback for any stale localStorage value
+}
+
 export const DEFAULT_MODEL_ID = "openai/gpt-4o"
+export const DEFAULT_PROVIDER: AIProvider = "openrouter"
 
 export interface AISettings {
   apiKey: string
   modelId: string
   webGrounding: boolean
+  provider: AIProvider
+  customBaseUrl: string
+  /** Per-provider key store so switching back to a provider restores its key */
+  providerKeys?: Partial<Record<AIProvider, string>>
 }
 
 const STORAGE_KEY = "nodepad-ai-settings"
 
 function loadSettings(): AISettings {
   if (typeof window === "undefined") {
-    return { apiKey: "", modelId: DEFAULT_MODEL_ID, webGrounding: false }
+    return { apiKey: "", modelId: DEFAULT_MODEL_ID, webGrounding: false, provider: DEFAULT_PROVIDER, customBaseUrl: "" }
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { apiKey: "", modelId: DEFAULT_MODEL_ID, webGrounding: false }
-    return { apiKey: "", modelId: DEFAULT_MODEL_ID, webGrounding: false, ...JSON.parse(raw) }
+    if (!raw) return { apiKey: "", modelId: DEFAULT_MODEL_ID, webGrounding: false, provider: DEFAULT_PROVIDER, customBaseUrl: "" }
+    return { apiKey: "", modelId: DEFAULT_MODEL_ID, webGrounding: false, provider: DEFAULT_PROVIDER, customBaseUrl: "", ...JSON.parse(raw) }
   } catch {
-    return { apiKey: "", modelId: DEFAULT_MODEL_ID, webGrounding: false }
+    return { apiKey: "", modelId: DEFAULT_MODEL_ID, webGrounding: false, provider: DEFAULT_PROVIDER, customBaseUrl: "" }
   }
 }
 
@@ -75,35 +158,70 @@ export interface AIConfig {
   apiKey: string
   modelId: string
   supportsGrounding: boolean
+  provider: AIProvider
+  customBaseUrl: string
 }
 
-/** Read AI settings fresh from localStorage and return the resolved config.
- *  Returns null if no API key is configured.
- *  Always call at request time — never store in a closure. */
 export function loadAIConfig(): AIConfig | null {
   const s = loadSettings()
   if (!s.apiKey) return null
-  const model = AI_MODELS.find(m => m.id === s.modelId) || AI_MODELS.find(m => m.id === DEFAULT_MODEL_ID)!
-  const modelId = s.modelId || DEFAULT_MODEL_ID
-  return { apiKey: s.apiKey, modelId, supportsGrounding: model.supportsGrounding }
+  const models = getModelsForProvider(s.provider)
+  const model = models.find(m => m.id === s.modelId)
+  // Use the matched model's id if found; otherwise fall back to the first model
+  // for this provider.  This handles the case where localStorage still holds an
+  // OpenRouter-prefixed id (e.g. "openai/gpt-4o") after switching to OpenAI —
+  // that string won't match any entry in OPENAI_MODELS so we fall back to "gpt-4o".
+  const modelId = model?.id ?? models[0]?.id ?? s.modelId ?? DEFAULT_MODEL_ID
+  const supportsGrounding =
+    (s.provider === "openrouter" || s.provider === "openai") &&
+    s.webGrounding &&
+    (model?.supportsGrounding ?? false)
+  return { apiKey: s.apiKey, modelId, supportsGrounding, provider: s.provider, customBaseUrl: s.customBaseUrl }
 }
 
-/** @deprecated Use loadAIConfig() for direct browser → OpenRouter calls.
+export function getBaseUrl(config: AIConfig): string {
+  return getPreset(config.provider).baseUrl
+}
+
+export function getProviderHeaders(config: AIConfig): Record<string, string> {
+  const base: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${config.apiKey}`,
+  }
+  if (config.provider === "openrouter") {
+    base["HTTP-Referer"] = "https://nodepad.space"
+    base["X-Title"] = "nodepad"
+  }
+  return base
+}
+
+/** @deprecated Use loadAIConfig() for direct browser → provider calls.
  *  Kept for any remaining server-route usage during transition. */
 export function getAIHeaders(): Record<string, string> {
   const config = loadAIConfig()
   if (!config) return {}
-  const model = AI_MODELS.find(m => m.id === config.modelId) || AI_MODELS.find(m => m.id === DEFAULT_MODEL_ID)!
-  const modelId = config.modelId
+  const models = getModelsForProvider(config.provider)
+  const model = models.find(m => m.id === config.modelId) || AI_MODELS.find(m => m.id === DEFAULT_MODEL_ID)!
   return {
     "x-or-key": config.apiKey,
-    "x-or-model": modelId,
+    "x-or-model": config.modelId,
     "x-or-supports-grounding": model.supportsGrounding ? "true" : "false",
   }
 }
 
 export function useAISettings() {
-  const [settings, setSettings] = useState<AISettings>(loadSettings)
+  // Always start with the SSR-safe default so server and client render identically.
+  // Load the real localStorage value after mount to avoid hydration mismatches
+  // caused by settings.apiKey toggling conditional DOM blocks (API key banner,
+  // modelLabel prop, etc.) between the server render and client hydration.
+  const [settings, setSettings] = useState<AISettings>({
+    apiKey: "", modelId: DEFAULT_MODEL_ID, webGrounding: false,
+    provider: DEFAULT_PROVIDER, customBaseUrl: "",
+  })
+
+  useEffect(() => {
+    setSettings(loadSettings())
+  }, [])
 
   const updateSettings = useCallback((patch: Partial<AISettings>) => {
     setSettings(prev => {
@@ -113,15 +231,24 @@ export function useAISettings() {
     })
   }, [])
 
+  const models = getModelsForProvider(settings.provider)
+
   const resolvedModelId = (() => {
-    const model = AI_MODELS.find(m => m.id === settings.modelId) || AI_MODELS.find(m => m.id === DEFAULT_MODEL_ID)!
-    if (settings.webGrounding && model.supportsGrounding) {
+    const model = models.find(m => m.id === settings.modelId) || models[0]
+    if (!model) return settings.modelId
+    if (settings.provider === "openrouter" && settings.webGrounding && model.supportsGrounding) {
       return `${model.id}:online`
     }
     return model.id
   })()
 
-  const currentModel = AI_MODELS.find(m => m.id === settings.modelId) || AI_MODELS.find(m => m.id === DEFAULT_MODEL_ID)!
+  const currentModel: AIModel = models.find(m => m.id === settings.modelId) || models[0] || {
+    id: settings.modelId,
+    label: settings.modelId,
+    shortLabel: settings.modelId.split("/").pop() || settings.modelId,
+    description: "Custom model",
+    supportsGrounding: false,
+  }
 
-  return { settings, updateSettings, resolvedModelId, currentModel }
+  return { settings, updateSettings, resolvedModelId, currentModel, models }
 }

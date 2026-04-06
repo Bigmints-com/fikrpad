@@ -1,7 +1,7 @@
 "use client"
 
 import { detectContentType } from "@/lib/detect-content-type"
-import { loadAIConfig, type AIConfig } from "@/lib/ai-settings"
+import { loadAIConfig, getBaseUrl, getProviderHeaders, getModelsForProvider } from "@/lib/ai-settings"
 import type { ContentType } from "@/lib/content-types"
 
 // ── Language detection ────────────────────────────────────────────────────────
@@ -88,7 +88,9 @@ const JSON_SCHEMA = {
       },
       category:           { type: "string" },
       annotation:         { type: "string" },
-      confidence:         { type: ["number", "null"] },
+      confidence: {
+        anyOf: [{ type: "number" }, { type: "null" }],
+      },
       influencedByIndices: {
         type: "array",
         items: { type: "number" },
@@ -99,8 +101,8 @@ const JSON_SCHEMA = {
         description: "True if the note is completely unrelated",
       },
       mergeWithIndex: {
-        type: ["number", "null"],
-        description: "Index of an existing note to merge into",
+        anyOf: [{ type: "number" }, { type: "null" }],
+        description: "Index of an existing note to merge into, or null if this note stands alone",
       },
     },
     required: ["contentType","category","annotation","confidence","influencedByIndices","isUnrelated","mergeWithIndex"],
@@ -160,15 +162,36 @@ export async function enrichBlockClient(
   const shouldGround = config.supportsGrounding && TRUTH_DEPENDENT_TYPES.has(effectiveType)
 
   let model = config.modelId
-  if (shouldGround && !model.endsWith(":online")) {
-    model = `${model}:online`
+  let webSearchOptions: Record<string, unknown> | undefined
+  if (shouldGround) {
+    if (config.provider === "openrouter") {
+      if (!model.endsWith(":online")) model = `${model}:online`
+    } else if (config.provider === "openai") {
+      const modelDef = getModelsForProvider("openai").find(m => m.id === config.modelId)
+      if (modelDef?.groundingModelId) model = modelDef.groundingModelId
+      webSearchOptions = {}
+    }
   }
+
+  const supportsJsonSchema = config.provider === "openrouter" || config.provider === "openai"
+  // gpt-*-search-preview models have known issues with strict json_schema + web_search_options;
+  // fall back to json_object mode (guaranteed valid JSON, no schema enforcement)
+  const useStrictSchema = supportsJsonSchema && !webSearchOptions
 
   const groundingNote = shouldGround
     ? `\n\n## Source Citations (grounded search active)
 You have live web access. For this note type, include 1–2 real source citations by name, publication, and year. Do NOT generate URLs — reference by title and author only (e.g. "Per *Science*, 2023, Doe et al."). Only cite sources you have actually retrieved.`
     : ""
-  const systemPrompt = SYSTEM_PROMPT + groundingNote
+
+  // Inject an explicit JSON instruction whenever we fall back to json_object mode.
+  // OpenAI requires the word "json" to appear in the messages when using
+  // response_format: json_object — this covers both non-schema providers AND
+  // the grounded OpenAI path where search-preview models can't use json_schema.
+  const schemaHint = !useStrictSchema
+    ? `\n\n## Output Format — CRITICAL\nYou MUST respond with a single JSON object (no markdown, no explanation). Schema:\n${JSON.stringify(JSON_SCHEMA.schema, null, 2)}`
+    : ""
+
+  const systemPrompt = SYSTEM_PROMPT + groundingNote + schemaHint
 
   const categoryContext = category
     ? `\n\nThe user has assigned this note the category "${category}".`
@@ -212,41 +235,59 @@ You have live web access. For this note type, include 1–2 real source citation
   const langDirective = `[RESPOND IN: ${language}]\n`
   const userMessage = `${langDirective}<note_to_enrich>${safeText}</note_to_enrich>${urlContext}${categoryContext}${forcedTypeContext}${globalContext}`
 
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const baseUrl = getBaseUrl(config)
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${config.apiKey}`,
-      "HTTP-Referer": "https://nodepad.space",
-      "X-Title": "nodepad",
-    },
+    headers: getProviderHeaders(config),
     body: JSON.stringify({
       model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user",   content: userMessage },
       ],
-      response_format: { type: "json_schema", json_schema: JSON_SCHEMA },
-      temperature: 0.1,
+      // OpenAI search-preview models reject both response_format AND temperature;
+      // when web_search_options is present, omit both and rely on the schemaHint
+      // in the system prompt to get structured JSON output.
+      ...(webSearchOptions === undefined
+        ? {
+            response_format: useStrictSchema
+              ? { type: "json_schema", json_schema: JSON_SCHEMA }
+              : { type: "json_object" },
+            temperature: 0.1,
+          }
+        : { web_search_options: webSearchOptions }),
     }),
   })
 
   if (!response.ok) {
     const err = await response.text()
-    throw new Error(`OpenRouter enrich error ${response.status}: ${err}`)
+    throw new Error(`AI enrich error (${config.provider}) ${response.status}: ${err}`)
   }
 
   const data = await response.json()
   const content = data.choices?.[0]?.message?.content
-  if (!content) throw new Error("No content in OpenRouter response")
+  if (!content) throw new Error("No content in AI response")
 
-  const result: EnrichResult = JSON.parse(content)
+  let result: EnrichResult
+  try {
+    result = JSON.parse(content)
+  } catch {
+    const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/)
+    if (fenceMatch) {
+      result = JSON.parse(fenceMatch[1].trim())
+    } else {
+      throw new Error(
+        `AI returned invalid JSON. The model may not support structured output.\n\nRaw response: ${content.substring(0, 200)}`
+      )
+    }
+  }
   if (result.confidence != null) {
     result.confidence = Math.min(100, Math.max(0, Math.round(result.confidence)))
   }
 
   // Extract clickable source links from response annotations.
-  // OpenRouter :online models return citations as annotations on the message object.
+  // Both OpenRouter :online and OpenAI search-preview return citations as
+  // annotations on the message object — not inside the JSON content itself.
   const annotations: Array<{ type: string; url_citation?: { url: string; title?: string } }> =
     data.choices?.[0]?.message?.annotations ?? []
   const seen = new Set<string>()
